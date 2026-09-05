@@ -1,163 +1,141 @@
 name: Go
-
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  # label:
-  #   types: [ created ]
-
+  push: null
 jobs:
   build:
     strategy:
       matrix:
-        os: [ windows-latest, ubuntu-20.04, macos-12, macos-14 ]
-
+        os:
+        - windows-latest
+        - ubuntu-20.04
+        - macos-12
+        - macos-14
     runs-on: ${{ matrix.os }}
     name: Build on ${{ matrix.os }}
     steps:
-
-      - name: Set up Go 1.x
-        uses: actions/setup-go@v5
-        with:
-          go-version: ^1.22
-
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
-
-      - name: Build on ${{ runner.os }}
-        run: go env && make jssh
-
-      - name: List files
-        run: ls -Rl release
-        if: ${{ runner.os != 'Windows' }}
-
-      - name: Accidentally upload to the same artifact via multiple jobs
-        uses: actions/upload-artifact@v4
-        if: ${{ runner.os != 'macOS' }}
-        with:
-          name: artifact-${{ matrix.os }}
-          path: ./release/*.tar.gz
-
-      - name: Accidentally upload to the same artifact via multiple jobs
-        uses: actions/upload-artifact@v4
-        if: ${{ runner.os == 'macOS' }}
-        with:
-          name: artifact-${{ matrix.os }}
-          path: ./release/*.zip
-
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.22
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+    - name: Build on ${{ runner.os }}
+      run: go env && make jssh
+    - name: List files
+      run: ls -Rl release
+      if: ${{ runner.os != 'Windows' }}
+    - name: Accidentally upload to the same artifact via multiple jobs
+      uses: actions/upload-artifact@v4
+      if: ${{ runner.os != 'macOS' }}
+      with:
+        name: artifact-${{ matrix.os }}
+        path: ./release/*.tar.gz
+    - name: Accidentally upload to the same artifact via multiple jobs
+      uses: actions/upload-artifact@v4
+      if: ${{ runner.os == 'macOS' }}
+      with:
+        name: artifact-${{ matrix.os }}
+        path: ./release/*.zip
   build_linux_other_platforms:
     runs-on: ubuntu-latest
     name: Build on Linux other platforms
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64,riscv64
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm64,riscv64
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.22
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+    - name: Prepare build
+      run: 'make jsbuiltin
 
-      - name: Set up Go 1.x
-        uses: actions/setup-go@v5
-        with:
-          go-version: ^1.22
+        '
+    - name: Build on Linux arm64
+      run: 'docker run --platform=arm64 --rm -v $(pwd):$(pwd) -w $(pwd) golang bash -c "git config --global
+        --add safe.directory /home/runner/work/jssh/jssh && go env && make jssh-only"
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
-
-      - name: Prepare build
-        run: |
-          make jsbuiltin
-
-      - name: Build on Linux arm64
-        run: |
-          docker run --platform=arm64 --rm -v $(pwd):$(pwd) -w $(pwd) golang bash -c "git config --global --add safe.directory /home/runner/work/jssh/jssh && go env && make jssh-only"
-
-      - name: List files
-        run: ls -Rl release
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: artifact-linux-arm64
-          path: ./release/*.tar.gz
-
+        '
+    - name: List files
+      run: ls -Rl release
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: artifact-linux-arm64
+        path: ./release/*.tar.gz
   release:
     runs-on: ubuntu-latest
     name: Release
-    needs: [ build, build_linux_other_platforms ]
+    needs:
+    - build
+    - build_linux_other_platforms
     steps:
-
-      - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
-        with:
-          name: artifact
-          pattern: artifact-*
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          path: .
-
-      - name: List files
-        run: ls -Rl
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: current
-          release_name: Build from commit ${{ github.sha }}
-          draft: true
-          prerelease: true
-
-      - name: Upload Release Asset for Windows AMD64 version
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifact/jssh-windows-amd64.tar.gz
-          asset_name: jssh-windows-amd64.tar.gz
-          asset_content_type: application/x-gzip
-
-      - name: Upload Release Asset for Linux AMD64 version
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifact/jssh-linux-amd64.tar.gz
-          asset_name: jssh-linux-amd64.tar.gz
-          asset_content_type: application/x-gzip
-
-      - name: Upload Release Asset for Linux ARM64 version
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifact/jssh-linux-arm64.tar.gz
-          asset_name: jssh-linux-arm64.tar.gz
-          asset_content_type: application/x-gzip
-
-      - name: Upload Release Asset for macOS AMD64 version
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifact/jssh-darwin-amd64.zip
-          asset_name: jssh-darwin-amd64.zip
-          asset_content_type: application/zip
-
-      - name: Upload Release Asset for macOS ARM64 version
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifact/jssh-darwin-arm64.zip
-          asset_name: jssh-darwin-arm64.zip
-          asset_content_type: application/zip
+    - name: Merge Artifacts
+      uses: actions/upload-artifact/merge@v4
+      with:
+        name: artifact
+        pattern: artifact-*
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        path: .
+    - name: List files
+      run: ls -Rl
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: current
+        release_name: Build from commit ${{ github.sha }}
+        draft: true
+        prerelease: true
+    - name: Upload Release Asset for Windows AMD64 version
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifact/jssh-windows-amd64.tar.gz
+        asset_name: jssh-windows-amd64.tar.gz
+        asset_content_type: application/x-gzip
+    - name: Upload Release Asset for Linux AMD64 version
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifact/jssh-linux-amd64.tar.gz
+        asset_name: jssh-linux-amd64.tar.gz
+        asset_content_type: application/x-gzip
+    - name: Upload Release Asset for Linux ARM64 version
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifact/jssh-linux-arm64.tar.gz
+        asset_name: jssh-linux-arm64.tar.gz
+        asset_content_type: application/x-gzip
+    - name: Upload Release Asset for macOS AMD64 version
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifact/jssh-darwin-amd64.zip
+        asset_name: jssh-darwin-amd64.zip
+        asset_content_type: application/zip
+    - name: Upload Release Asset for macOS ARM64 version
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifact/jssh-darwin-arm64.zip
+        asset_name: jssh-darwin-arm64.zip
+        asset_content_type: application/zip
